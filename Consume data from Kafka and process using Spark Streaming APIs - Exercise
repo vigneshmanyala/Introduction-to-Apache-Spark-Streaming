@@ -1,0 +1,51 @@
+Object KafkaStreamProcessing{
+  Case class YouBuyy(CustomerID:String, Timestamp:String, ProductsSearched:String, IPaddress:String, SessionTime:Int, ExitURL:String)
+def main(args:Arry[String]){
+  if(args.length<3){
+    System.err.println("Please provide 3 parameters")
+    System.exit(1)
+  }
+  
+  val sc = new SparkConf().setAppName("YouBuyy")
+  val ssc = new StreamingContext(sc,Seconds(10))
+  
+  val topics = args(2).split(",").toSet
+  
+  val kafkaparams = Map[String,Object](
+  ConsumerConfig.BOOTSTRAP_SERVER_CONFIG -> args(0),
+    ConsumerConfig.GROUP_ID_CONFIG -> args(1),
+    ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG -> classOf[StringDeserializer],
+    ConsumerCnfig.VALUE_DESERIALIZER_CLASS_CONFIG -> classOf[StringDeserializer]
+  )
+  
+  val LogStream = KafkaUtils.createDirectStream(ssc,LocationStrategies.PreferConsistent,ConsumerStrategies.Subscribe[String,String](topics,Kafkaparms))
+  
+  val logvalues = Logstream.map(x => x.values())
+  
+  val windowedlog = logvalues.window(Seconds(60),Seconds(10))
+  
+  val sqlContext = sql.SQLContext(ssc.sparkContext)
+  
+  import sqlContext.implicits_
+  
+  windowedlog.foreaachRDD(
+  rdd =>
+  {
+    val df = rdd.map(x => x.split(",")).map{c => YouBuyy(c(0),c(1),c(2),c(3),c(4).toInt,c(5))}.toDF()
+    //val rdd2 = rdd1.map(x = x(2).split("$"))
+    //val df   = rdd1.map{c => YouBuyy(c(0),c(1),c(2),c(3),c(4).toInt,c(5))}.toDF()
+    
+    df.registerTempTable("CustomerYouBuyy")
+    
+    val topproducts = sqlContext.sql("select ProductsSerached,Count(*) as count from (select EXPLODE(SPLIT(ProductsSearched,'\\$')) as ProductsPurchase from CustomerYouBuyy where SessionTime >=30) Group By ProductsSearched Order by count desc limit 3")
+    
+    val exiturl = sqlContext.sql("select ExitURL, Count(ExitURL) count from CustomerYouBuyy where Group by ExitURL having count = MAX(Count(ExitURL))")
+  
+    topproducts.show()
+    exiturl.show()
+  
+})
+  ssc.start()
+  ssc.awaitTermination()
+}
+}
