@@ -1,0 +1,35 @@
+Object dfsStreamProcessing{
+  Case class RideYouuLike(TripID:String, UserID:String, DateTime:String, Longitude:Double, Latitude:Double, LocationArea:String)
+def main(args:Arry[String]){
+  if(args.length<1){
+    System.err.println("Please provide the address")
+    System.exit(1)
+  }
+  val sc  = new SparkConf().setAppName("RideYouuLike")
+  val ssc = new StreamingContext(sc,Seconds(10))
+  
+  val logstream = ssc.textFileStream(args(0))
+  
+  val windowedlog = logstream.window(Seconds(60),Second(20))
+  
+  val sqlc = new SQLContext(ssc.sparkContext)
+  
+  import sqlc.implicits._
+  
+  windowedlog.foreachRDD(
+    rdd=>
+    
+    {
+      val df = rdd.map(x => x.split(",")).map(c => RideYouuLike(c(0),c(1),c(2),c(3).toDouble,c(4).toDouble,c(5))).toDF()
+    
+    df.registerTempTable("RideYouuLikeLogs")
+    
+    val TopPlaces = sqlc.sql("select LocationArea, Count(LocationArea) Count from RideYouuLikeLogs Group by LocationArea HAVING Count = MAX(Count(LocationArea))")
+    
+    df.show() 
+  }  
+)
+  ssc.start()
+  ssc.awaitTermination()
+}
+}
